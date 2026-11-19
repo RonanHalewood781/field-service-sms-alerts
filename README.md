@@ -1,6 +1,6 @@
 # Dispatch updates that reach the technician
 
-I built this small service after a field visit where the backend knew the work order was moving, but the technician still had to refresh a dashboard. The example turns one validated work-order record into a transactional SMS alert. Infrai sends it through one api, so I skipped another vendor SDK in a side project. It is an architecture decision record in code: the decision is visible in `notifyTechnician`, and the trade-offs are kept close to the workflow.
+I built this small service after a field visit where the backend knew the work order was moving, but the technician still had to refresh a dashboard. The example turns one validated work-order record into a transactional SMS alert. It is an architecture decision record in code: the decision is visible in `notifyTechnician`, and the trade-offs are kept close to the workflow.
 
 ## The decision
 
@@ -8,9 +8,9 @@ I considered email, a vendor-specific SDK, and a queue-first design. Email is a 
 
 ## Follow the request
 
-`src/field_alerts.ts` accepts `id`, `technicianPhone`, `dispatchStatus`, `photoUrls`, and `followUp`. Zod guards the boundary and drops malformed records before they reach the carrier. Completed work orders return `{ skipped: true, reason: "completed" }`; active ones get a concise text with dispatch state, photo links, and the technician's next step. The send uses `sms.batch.send` with an idempotency key derived from the work-order id, so a retry is the same business event and not a duplicate ping.
+`src/field_alerts.ts` accepts `id`, `technicianPhone`, `dispatchStatus`, `photoUrls`, and `followUp`. Zod rejects malformed records. Completed work orders return `{ skipped: true, reason: "completed" }`; active orders produce a short message containing the dispatch state, any photo URLs, and the technician's next action. The send uses `sms.batch.send` with an idempotency key derived from the work-order id, so a retry represents the same business event.
 
-The transport in `src/infrai_sms.ts` sends an explicit `POST` to `/v1/sms/batch/send`, authenticates with `Authorization: Bearer ${INFRAI_API_KEY}`, and parses `{ ok, data, error, metadata }` before trusting the HTTP status. It backs off on 429 responses to stay under carrier rate limits. There is no SDK to install for the API call itself; a plain fetch works, and the same pattern maps to a Python requests call if you outgrow Node.
+The transport in `src/infrai_sms.ts` sends an explicit `POST` to `/v1/sms/batch/send`, authenticates with `Authorization: Bearer ${INFRAI_API_KEY}`, parses `{ ok, data, error, metadata }` before considering the HTTP status, and backs off on 429 responses. There is no SDK to install for the API call itself; it is a plain fetch that is easy to replace in a larger service.
 
 ## Run the small loop
 
@@ -25,7 +25,7 @@ For a real send, export `INFRAI_API_KEY` and `TECHNICIAN_PHONE`, then run `npm r
 
 ## What I would add next
 
-After this afternoon-sized slice, I would persist the work-order event and use `sms.events` to show delivery state in the dispatcher view. Photos remain links in the alert; the backend that owns them can keep its existing storage policy. That avoids duplicating blobs just for SMS.
+After this first afternoon-sized slice, I would persist the work-order event and use `sms.events` to show delivery state in the dispatcher view. Photos remain links in the alert; the backend that owns them can keep its existing storage policy.
 
 ## License
 
